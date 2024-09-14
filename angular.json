@@ -70,10 +70,10 @@
           "builder": "@angular-devkit/build-angular:dev-server",
           "configurations": {
             "production": {
-              "browserTarget": "ElectronBatchDownloadManager:build:production"
+              "buildTarget": "ElectronBatchDownloadManager:build:production"
             },
             "development": {
-              "browserTarget": "ElectronBatchDownloadManager:build:development"
+              "buildTarget": "ElectronBatchDownloadManager:build:development"
             }
           },
           "defaultConfiguration": "development"
@@ -81,7 +81,7 @@
         "extract-i18n": {
           "builder": "@angular-devkit/build-angular:extract-i18n",
           "options": {
-            "browserTarget": "ElectronBatchDownloadManager:build"
+            "buildTarget": "ElectronBatchDownloadManager:build"
           }
         },
         "test": {

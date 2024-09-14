@@ -1,6 +1,9 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const url = require('url');
+const fs = require('fs');
+const https = require('https');
+const throttle = require('throttle');
 
 let mainWindow;
 const settingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -34,33 +37,17 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  console.log('Settings path:', settingsPath);
 }
 
-// Handle downloads and UI interactions via IPC
-ipcMain.on('start-download', (event, downloadUrl) => {
-  // Implement download logic or call a function to handle download
-  console.log(`Received download request for URL: ${downloadUrl}`);
-
-  // Example: Sending progress updates to Angular
-  // Simulate progress with a setInterval, replace with real download logic
-  let progress = 0;
-  const progressInterval = setInterval(() => {
-    progress += 10;
-    if (progress > 100) {
-      clearInterval(progressInterval);
-      event.sender.send('download-complete', downloadUrl);
-    } else {
-      event.sender.send('download-progress', { url: downloadUrl, progress });
-    }
-  }, 500);
-});
-
-
 ipcMain.on('save-settings', (event, settings) => {
+  console.log('Received settings:', settings);
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 });
 
 ipcMain.on('load-settings', (event) => {
+  console.log('Loading settings...');
   try {
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
     event.reply('settings-loaded', settings);
@@ -68,6 +55,84 @@ ipcMain.on('load-settings', (event) => {
     event.reply('settings-loaded', { desiredFileTypes: [] });
   }
 });
+
+// IPC handlers
+ipcMain.on('start-downloads', (event, { urls, maxSpeed }) => {
+  console.log('Starting downloads...');
+  urls.forEach(url => startDownload(url, maxSpeed));
+});
+
+ipcMain.on('pause-download', (event, url) => {
+  console.log('Pausing download:', url);
+  const download = downloads.get(url);
+  if (download) {
+    download.pause();
+  }
+});
+
+ipcMain.on('resume-download', (event, url) => {
+  console.log('Resuming download:', url);
+  const download = downloads.get(url);
+  if (download) {
+    download.resume();
+  }
+});
+
+ipcMain.on('stop-download', (event, url) => {
+  console.log('Stopping download:', url);
+  const download = downloads.get(url);
+  if (download) {
+    download.stop();
+    downloads.delete(url);
+  }
+});
+
+ipcMain.on('set-max-speed', (event, speed) => {
+  console.log('Setting max speed to:', speed);
+  downloads.forEach(download => {
+    download.setMaxSpeed(speed);
+  });
+});
+
+function startDownload(url, maxSpeed) {
+  console.log('Starting download:', url);
+  const file = fs.createWriteStream(path.basename(url));
+  let downloaded = 0;
+  let totalSize = 0;
+
+  const request = https.get(url, response => {
+    totalSize = parseInt(response.headers['content-length'], 10);
+
+    const throttleStream = new throttle(maxSpeed * 1024 * 1024);
+    response.pipe(throttleStream).pipe(file);
+
+    throttleStream.on('data', chunk => {
+      downloaded += chunk.length;
+      const progress = (downloaded / totalSize) * 100;
+      const speed = chunk.length / 1024 / 1024; // MB/s
+      mainWindow.webContents.send('download-progress', { url, progress, speed, status: 'Downloading' });
+    });
+  });
+
+  const download = {
+    pause: () => request.pause(),
+    resume: () => request.resume(),
+    stop: () => {
+      request.abort();
+      file.close();
+    },
+    setMaxSpeed: (speed) => {
+      throttleStream.setRate(speed * 1024 * 1024);
+    }
+  };
+
+  downloads.set(url, download);
+
+  request.on('end', () => {
+    mainWindow.webContents.send('download-complete', url);
+    downloads.delete(url);
+  });
+}
 
 // App lifecycle management
 app.on('ready', createWindow);

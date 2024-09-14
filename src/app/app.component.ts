@@ -1,8 +1,16 @@
-import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import { Component, ElementRef, NgZone, OnInit, ViewChild } from '@angular/core';
 import { HttpClient, HttpEvent, HttpEventType } from '@angular/common/http';
 import { Observable, from, of, merge } from 'rxjs';
 import { map, catchError, mergeMap, finalize } from 'rxjs/operators';
-import { IpcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, IpcRenderer } from 'electron';
+import { FormControl } from '@angular/forms';
+
+contextBridge.exposeInMainWorld('electron', {
+  ipcRenderer: {
+      send: (channel: any, data: any) => ipcRenderer.send(channel, data),
+      on: (channel: any, func: any) => ipcRenderer.on(channel, (event, ...args) => func(...args)),
+  }
+});
 
 @Component({
   selector: 'app-root',
@@ -16,11 +24,13 @@ export class AppComponent implements OnInit {
   private lastLoaded: { [url: string]: number } = {};
   private lastTime: { [url: string]: number } = {};
   private speedBuffer: { [url: string]: number[] } = {};
-  private bufferSize = 5;
+  private bufferSize = 20;
+  maxDownloadSpeed: number = 0;
+  maxConcurrentDownloads: number = 3;
   desiredFileTypes: string[] = [];
   @ViewChild('urlInput') urlInput!: ElementRef<HTMLTextAreaElement>;
 
-  constructor(private http: HttpClient) {
+  constructor(private http: HttpClient, private ngZone: NgZone) {
     if (window.require) {
       try {
         this.ipcRenderer = window.require('electron').ipcRenderer;
@@ -31,12 +41,102 @@ export class AppComponent implements OnInit {
   }
 
   ngOnInit() {
+    this.setupIpcListeners();
     this.loadSettings();
+  }
+
+  setupIpcListeners() {
+    if (this.ipcRenderer) {
+      this.ipcRenderer.on('download-progress', (event, data) => {
+        this.ngZone.run(() => {
+          const { url, progress, speed, status } = data;
+          this.downloadProgress[url] = {
+            progress,
+            speed: `${speed.toFixed(2)} MB/s`,
+            status
+          };
+        });
+      });
+
+      this.ipcRenderer.on('download-complete', (event, url) => {
+        this.ngZone.run(() => {
+          this.urls = this.urls.filter(u => u !== url);
+          delete this.downloadProgress[url];
+        });
+      });
+    }
+  }
+
+  startDownloads(): void {
+    const downloadObservables: Observable<any>[] = this.urls.map(url => this.downloadFile(url));
+    merge(...downloadObservables).subscribe();
+  }
+
+  updateDownloadProgress(url: string, progress: number, speed: string, status: string) {
+    this.downloadProgress[url] = {
+      progress,
+      speed,
+      status
+    };
+  }
+  
+  downloadFile(url: string): Observable<any> {
+    return new Observable((observer) => {
+      this.ipcRenderer!.send('download-file', url);
+      this.ipcRenderer!.on('download-progress', (event, progress, speed, status) => {
+        this.updateDownloadProgress(url, progress, speed, status);
+        observer.next();
+      });
+      this.ipcRenderer!.on('download-complete', (event, filePath) => {
+        this.updateDownloadProgress(url, 100, '0.00', 'Completed');
+        observer.complete();
+      });
+      this.ipcRenderer!.on('download-error', (event, error) => {
+        this.updateDownloadProgress(url, 0, '0.00', 'Error');
+        observer.error(error);
+      });
+    });
+  }
+
+  pauseDownload(url: string): void {
+    if (this.ipcRenderer) {
+      this.ipcRenderer.send('pause-download', url);
+    }
+  }
+
+  resumeDownload(url: string): void {
+    if (this.ipcRenderer) {
+      this.ipcRenderer.send('resume-download', url);
+    }
+  }
+
+  stopDownload(url: string): void {
+    if (this.ipcRenderer) {
+      this.ipcRenderer.send('stop-download', url);
+    }
+  }
+
+  setMaxDownloadSpeed($event: Event): void {
+    const speed = Number(($event.target as HTMLInputElement).value);
+    if (this.ipcRenderer) {
+      this.ipcRenderer.send('set-max-speed', speed);
+    }
+  }
+
+  setMaxConcurrentDownloads($event: Event): void {
+    const maxConcurrentDownloads = Number(($event.target as HTMLInputElement).value);
+    if (this.ipcRenderer) {
+      this.ipcRenderer.send('set-max-concurrent-downloads', maxConcurrentDownloads);
+    }
   }
 
   saveSettings(): void {
     if (this.ipcRenderer) {
-      this.ipcRenderer.send('save-settings', { desiredFileTypes: this.desiredFileTypes });
+      this.ipcRenderer.send('save-settings', {
+        desiredFileTypes: this.desiredFileTypes,
+        downloadSpeed: this.maxDownloadSpeed,
+        concurrentDownloads: this.maxConcurrentDownloads
+      });
     }
   }
   
@@ -45,6 +145,8 @@ export class AppComponent implements OnInit {
       this.ipcRenderer.send('load-settings');
       this.ipcRenderer.once('settings-loaded', (event, settings) => {
         this.desiredFileTypes = settings.desiredFileTypes || [];
+        this.maxConcurrentDownloads = settings.maxConcurrentDownloads || 3;
+        this.maxDownloadSpeed = settings.downloadSpeed || 0;
       });
     }
   }
@@ -66,7 +168,7 @@ export class AppComponent implements OnInit {
         const fileExtension = this.getFileExtension(trimmedUrl);
         if (this.desiredFileTypes.length === 0 || this.desiredFileTypes.includes(fileExtension)) {
           this.urls.push(trimmedUrl);
-          this.downloadProgress[trimmedUrl] = { progress: 0, speed: '0 MB/s', status: 'Pending' };
+          this.downloadProgress[trimmedUrl] = { progress: 0, speed: '0 MB/s', status: 'Pending'};
         }
       }
     });
@@ -80,11 +182,6 @@ export class AppComponent implements OnInit {
   clearUrls(): void {
     this.urls = [];
     this.downloadProgress = {};
-  }
-
-  startDownloads(): void {
-    const downloadObservables: Observable<any>[] = this.urls.map(url => this.downloadFile(url));
-    merge(...downloadObservables).subscribe();
   }
 
   private calculateSpeed(url: string, loaded: number, timestamp: number): string {
@@ -115,7 +212,7 @@ export class AppComponent implements OnInit {
     return `${avgSpeed.toFixed(2)} MB/s`;
   }
 
-  downloadFile(url: string): Observable<void> {
+  downloadFileOld(url: string): Observable<void> {
     console.log(`Downloading ${url}`);
     const filename = url.split(/[/\\]/).pop() || 'unknown';
   
@@ -134,7 +231,7 @@ export class AppComponent implements OnInit {
                   this.downloadProgress[url] = { 
                     progress: percentDone, 
                     speed: speed, 
-                    status: 'Downloading' 
+                    status: 'Downloading',
                   };
                 }
                 break;

@@ -1,64 +1,23 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('Electron', {
-  ipcRenderer: {
-    send: (channel, data) => ipcRenderer.send(channel, data),
-    on: (channel, func) => {
-        // Ensure the channel and function are valid before setting up the listener
-        if (typeof channel === 'string' && typeof func === 'function') {
-          ipcRenderer.on(channel, (event, ...args) => {
-            try {
-              func(...args);
-            } catch (error) {
-              console.error(`Error in IPC handler for channel ${channel}:`, error);
-            }
-          });
-        }
-      },
-      once: (channel, func) => {
-        if (typeof channel === 'string' && typeof func === 'function') {
-          ipcRenderer.once(channel, (event, ...args) => {
-            try {
-              func(...args);
-            } catch (error) {
-              console.error(`Error in IPC handler for channel ${channel}:`, error);
-            }
-          });
-        }
-      },
-    invoke: (channel, data) => ipcRenderer.invoke(channel, data),
-  }
-});
-
-window.addEventListener('DOMContentLoaded', () => {
-    // Check if `window.Electron` is defined
-    if (window.Electron && window.Electron.ipcRenderer) {
-      const { ipcRenderer } = window.Electron;
-  
-      ipcRenderer.on('download-progress', (progressData) => {
-        try {
-          if (progressData && typeof progressData === 'object') {
-            const { url, progress, speed, status } = progressData;
-            console.log('Download progress:', { url, progress, speed, status });
-            // Handle progress update
-          } else {
-            console.error('Invalid progress data:', progressData);
-          }
-        } catch (error) {
-          console.error('Error handling download-progress event:', error);
-        }
-      });
-  
-      ipcRenderer.on('download-complete', (url) => {
-        console.log('Download complete:', url);
-        // Handle download completion
-      });
-  
-      ipcRenderer.on('download-error', (errorData) => {
-        console.error('Download error:', errorData);
-        // Handle download error
-      });
-    } else {
-      console.error('window.Electron is not defined or ipcRenderer is missing');
-    }
-});
+    ipcRenderer: {
+      send: (channel, data) => ipcRenderer.send(channel, data),
+      on: (channel, listener) => ipcRenderer.on(channel, listener),
+      once: (channel, listener) => ipcRenderer.once(channel, listener),
+      invoke: (channel, data) => ipcRenderer.invoke(channel, data),
+    },
+    getAppPath: () => ipcRenderer.invoke('get-app-path'),
+    saveSettings: (settings) => ipcRenderer.send('save-settings', settings),
+    loadSettings: () => ipcRenderer.send('load-settings'),
+    startDownloads: (data) => ipcRenderer.send('start-downloads', data),
+    pauseDownload: (url) => ipcRenderer.send('pause-download', url),
+    resumeDownload: (url) => ipcRenderer.send('resume-download', url),
+    stopDownload: (url) => ipcRenderer.send('stop-download', url),
+    setMaxSpeed: (speed) => ipcRenderer.send('set-max-speed', speed),
+    setMaxConcurrentDownloads: (maxConcurrent) => ipcRenderer.send('set-max-concurrent-downloads', maxConcurrent),
+    onDownloadProgress: (callback) => ipcRenderer.on('download-progress', (event, data) => callback(data)),
+    onDownloadComplete: (callback) => ipcRenderer.on('download-complete', (event, url) => callback(url)),
+    onDownloadError: (callback) => ipcRenderer.on('download-error', (event, data) => callback(data)),
+    onSettingsLoaded: (callback) => ipcRenderer.on('settings-loaded', (event, settings) => callback(settings)),
+})

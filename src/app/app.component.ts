@@ -38,8 +38,8 @@ export class AppComponent implements OnInit {
   }
 
   setupIpcListeners() {
-    if (this.ipcRenderer) {
-      this.ipcRenderer.on('download-progress', (event: any, data: any) => {
+    if (window.Electron) {
+      window.Electron.onDownloadProgress((data: any) => {
         this.ngZone.run(() => {
           const { url, progress, speed, status } = data;
           this.downloadProgress[url] = {
@@ -50,14 +50,14 @@ export class AppComponent implements OnInit {
         });
       });
 
-      this.ipcRenderer.on('download-complete', (event: any, url: any) => {
+      window.Electron.onDownloadComplete((url: any) => {
         this.ngZone.run(() => {
           this.urls = this.urls.filter(u => u !== url);
           delete this.downloadProgress[url];
         });
       });
 
-      this.ipcRenderer.on('download-error', (event: any, data: any) => {
+      window.Electron.onDownloadError((data: any) => {
         this.ngZone.run(() => {
           const { url, error } = data;
           this.downloadProgress[url] = {

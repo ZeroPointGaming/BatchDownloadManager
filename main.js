@@ -19,7 +19,7 @@ function createWindow() {
     height: 1080,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'), // Ensure you have a preload script if needed
-      contextIsolation: false, // Important for security
+      contextIsolation: true, // Important for security
       enableRemoteModule: false,
       nodeIntegration: false, // Keep this false for security
       webSecurity: false, // Keep web security enabled

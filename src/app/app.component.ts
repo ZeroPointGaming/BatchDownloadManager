@@ -40,18 +40,27 @@ export class AppComponent implements OnInit {
   setupIpcListeners() {
     if (window.Electron) {
       window.Electron.onDownloadProgress((data: any) => {
-        this.ngZone.run(() => {
+        this.ngZone.run(() => {  // Ensure Angular detects the changes
           const { url, progress, speed, status } = data;
-          this.downloadProgress[url] = {
-            progress,
-            speed: `${speed.toFixed(2)} MB/s`,
-            status
-          };
+  
+          // If progress is 100%, automatically remove the URL from UI
+          if (progress === 100) {
+            this.urls = this.urls.filter(u => u !== url);
+            delete this.downloadProgress[url];
+          } else {
+            // Update the progress and speed if download is still ongoing
+            this.downloadProgress[url] = {
+              progress,
+              speed: `${speed.toFixed(2)} MB/s`,
+              status
+            };
+          }
         });
       });
 
       window.Electron.onDownloadComplete((url: any) => {
         this.ngZone.run(() => {
+          console.log(`Download complete event received for: ${url}`); // Add this log
           this.urls = this.urls.filter(u => u !== url);
           delete this.downloadProgress[url];
         });

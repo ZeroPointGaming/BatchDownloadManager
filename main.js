@@ -117,11 +117,14 @@ function processDownloadQueue() {
 function startDownload(url, maxSpeed) {
   console.log('Starting download:', url);
 
-  let filePath = path.join(__dirname, path.basename(url));
+  const decodedFileName = decodeURIComponent(path.basename(url));
+  let filePath = path.join(__dirname, decodedFileName);
   let file = fs.createWriteStream(filePath);
   let downloaded = 0;
   let totalSize = 0;
   let startTime = Date.now();
+
+  activeDownloads++; // Increment active downloads
 
   let request = https.get(url, response => {
     totalSize = parseInt(response.headers['content-length'], 10);
@@ -145,21 +148,44 @@ function startDownload(url, maxSpeed) {
   });
 
   request.on('end', () => {
+    console.log('Sending download-complete for:', url); // Add this log
     mainWindow.webContents.send('download-complete', url);
-    processDownloadQueue();
+    activeDownloads--; // Decrement active downloads
+    processDownloadQueue(); // Start the next download
+  });
+
+  request.on('close', () => {
+    console.log(`Download closed: ${url}`);
+    if (downloaded === totalSize) {
+      mainWindow.webContents.send('download-complete', url);
+    }
+    activeDownloads--; // Decrement active downloads
+    processDownloadQueue(); // Start the next download
   });
 
   request.on('error', (error) => {
     mainWindow.webContents.send('download-error', { url, error: error.message });
+    activeDownloads--; // Decrement active downloads even on error
+    processDownloadQueue(); // Start the next download
+  });
+
+  file.on('finish', () => {
+    console.log('File stream finished for', url);
+    file.close();
+  });
+
+  file.on('close', () => {
+    console.log('File stream closed for', url);
+    mainWindow.webContents.send('download-complete', url);
     processDownloadQueue();
   });
 
   file.on('error', (error) => {
     mainWindow.webContents.send('download-error', { url, error: error.message });
-    processDownloadQueue();
+    activeDownloads--; // Decrement active downloads even on file error
+    processDownloadQueue(); // Start the next download
   });
 }
-
 
 // App lifecycle management
 app.on('ready', createWindow);

@@ -110,26 +110,54 @@ Batch Download Manager serves as both a functional utility and a technical showc
 Developed as part of a professional software engineering portfolio to demonstrate cross platform desktop application development, Electron and Angular integration, and IPC driven system architecture.
 This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 16.2.7.
 
-## Development server
+---
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+## Build and Development Workflow
 
-## Code scaffolding
+### Development Mode
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+The application is designed to run Angular and Electron together during development. In this mode, Angular serves the frontend application while Electron loads it inside a desktop shell.
 
-## Build
+The typical development flow is:
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+1. Install Node.js dependencies.
+2. Start the Electron development runtime using an `npx electron` based command.
+3. Electron launches and loads the Angular development server.
+4. The Angular UI runs with live reload enabled.
+5. IPC channels are initialized to allow communication between the Angular renderer process and the Electron main process.
 
-## Running unit tests
+This setup allows rapid iteration, where UI changes are reflected immediately without rebuilding the entire desktop application.
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+---
 
-## Running end-to-end tests
+### Production Build
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+For a release build, the Angular application is compiled first, producing static assets optimized for performance. These assets are then bundled and loaded by Electron as the renderer layer.
 
-## Further help
+The production workflow consists of:
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.io/cli) page.
+1. Building the Angular application using the production build configuration defined in `angular.json`.
+2. Outputting compiled HTML, JavaScript, and CSS assets.
+3. Launching Electron against the compiled frontend instead of the development server.
+4. Packaging the Electron application for distribution.
+
+This separation ensures that frontend compilation and desktop packaging remain independent while still integrating cleanly.
+
+---
+
+### Running the Built Application
+
+Once built, Electron loads the compiled Angular output directly from disk. All user interaction continues to occur within the Angular UI, while system level operations such as downloads and filesystem access are handled by the Electron process via IPC.
+
+This mirrors how a production desktop application behaves and ensures consistent behavior between development and release builds.
+
+---
+
+### Summary
+
+- Development uses Electron with an Angular development server for fast iteration.
+- Production builds compile Angular first, then bundle the output with Electron.
+- IPC is used consistently in both modes to communicate between UI and application layers.
+
+This workflow demonstrates a real world, production viable approach to combining Angular and Electron for cross platform desktop applications.
+
